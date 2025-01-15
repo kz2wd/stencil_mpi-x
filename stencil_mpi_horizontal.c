@@ -38,9 +38,9 @@ More data to transfer compared to a square setup
 #define CYN "\e[0;36m"
 #define WHT "\e[0;37m"
 
-#define STENCIL_SIZE 6
+#define STENCIL_SIZE 500
 
-#define HALO_SIZE 3
+#define HALO_SIZE 100
 
 typedef float stencil_t;
 
@@ -162,16 +162,23 @@ static int stencil_internal(void)
 static void handle_top_neighbor() {
 	if (IS_FIRST) return;
 	// Make it non lock, otherwise troubles :x
-	MPI_Status status;
-	MPI_Send(FIRST_ROW, size_x, MPI_FLOAT, rank - 1, tag, MPI_COMM_WORLD);
-	MPI_Recv(TOP_HALO, size_x, MPI_FLOAT, rank - 1, tag, MPI_COMM_WORLD, &status);
+	MPI_Status statuses[2];
+	MPI_Request requests[2];
+	MPI_Isend(FIRST_ROW, size_x, MPI_FLOAT, rank - 1, tag, MPI_COMM_WORLD, &requests[0]);
+	MPI_Irecv(TOP_HALO, size_x, MPI_FLOAT, rank - 1, tag, MPI_COMM_WORLD, &requests[1]);
+
+	MPI_Waitall(2, requests, statuses);
 }
 
 static void handle_bot_neighbor() {
 	if (IS_LAST) return;
-	MPI_Status status;
-	MPI_Recv(BOT_HALO, size_x, MPI_FLOAT, rank + 1, tag, MPI_COMM_WORLD, &status);
-	MPI_Send(LAST_ROW, size_x, MPI_FLOAT, rank + 1, tag, MPI_COMM_WORLD);	
+	
+	MPI_Status statuses[2];
+	MPI_Request requests[2];
+	MPI_Isend(LAST_ROW, size_x, MPI_FLOAT, rank + 1, tag, MPI_COMM_WORLD, &requests[1]);
+	MPI_Irecv(BOT_HALO, size_x, MPI_FLOAT, rank + 1, tag, MPI_COMM_WORLD, &requests[0]);
+	
+	MPI_Waitall(2, requests, statuses);
 }
 
 
@@ -194,6 +201,7 @@ static int stencil_step(void)
 {
 	int convergence = 1;
 
+	/* switch buffers */
 	stencil_t *tmp = prev_values;
 	prev_values = values;
 	values = tmp;
@@ -202,8 +210,6 @@ static int stencil_step(void)
 	convergence = stencil_internal();
 	// Communicate adjacent rows
 	stencil_communicate(&convergence);
-	/* switch buffers */
-
 
 
 	// barrier
@@ -213,26 +219,14 @@ static int stencil_step(void)
 }
 
 void mpi_stencil_display() {
+	if (STENCIL_SIZE > 10 || HALO_SIZE > 10) return;
 	MPI_Barrier(MPI_COMM_WORLD);
-	if (IS_FIRST) {
-		stencil_display(0, size_x - 1, 0, HALO_SIZE - 1);
-		// printf(BLU);
-		// for (int x = 0; x <= size_x - 1; x++)
-		// {
-		// 	printf("%4.5g ", FIRST_ROW[x + size_x * HALO_SIZE]);
-		// }
-		// printf("\n");
-	}
-	sleep(0.1);
-	MPI_Barrier(MPI_COMM_WORLD);
-	if (IS_LAST){
-		// printf(BLU);
-		// for (int x = 0; x <= size_x - 1; x++)
-		// {
-		// 	printf("%4.5g ", values[x]);
-		// }
-		// printf("\n");
-		stencil_display(0, size_x - 1, 0, HALO_SIZE - 1);
+	for (int i = 0; i < world_size; ++i){
+		if (i == rank){
+			stencil_display(0, size_x - 1, 0, HALO_SIZE - 1);	
+		}
+		sleep(0.1);
+		MPI_Barrier(MPI_COMM_WORLD);
 	}
 }
 
@@ -256,10 +250,6 @@ int main(int argc, char **argv)
 		{
 			break;
 		}
-		// mpi_stencil_display();
-		// if (IS_LAST)
-		// // printf("\n");
-		// sleep(1);
 		MPI_Barrier(MPI_COMM_WORLD);
 	}
 	clock_gettime(CLOCK_MONOTONIC, &t2);
