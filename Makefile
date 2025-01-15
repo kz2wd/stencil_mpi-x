@@ -1,8 +1,8 @@
 CC      = gcc
-CFLAGS += -Wall -g -O4
+CFLAGS += -Wall -g -O2
 LDLIBS += -lm -lrt
 
-all: stencil stencil_mpi_horizontal
+all: stencil
 
 clean:
 	-rm stencil

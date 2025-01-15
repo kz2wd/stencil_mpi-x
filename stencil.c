@@ -4,8 +4,9 @@
 #include <string.h>
 #include <math.h>
 #include <time.h>
+#include <unistd.h>
 
-#define STENCIL_SIZE 100
+#define STENCIL_SIZE 6
 
 typedef float stencil_t;
 
@@ -115,6 +116,9 @@ int main(int argc, char**argv)
         {
           break;
         }
+        // stencil_display(0, size_x - 1, 0, size_y - 1);
+        // printf("\n");
+        // sleep(1);
     }
   clock_gettime(CLOCK_MONOTONIC, &t2);
   const double t_usec = (t2.tv_sec - t1.tv_sec) * 1000000.0 + (t2.tv_nsec - t1.tv_nsec) / 1000.0;

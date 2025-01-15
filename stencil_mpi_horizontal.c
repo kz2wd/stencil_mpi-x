@@ -23,12 +23,24 @@ More data to transfer compared to a square setup
 #include <string.h>
 #include <math.h>
 #include <time.h>
+#include <unistd.h>
 
 #include <mpi.h>
 
-#define STENCIL_SIZE 100
+#define RESET "\e[0m"
 
-#define HALO_SIZE 52
+#define BLK "\e[0;30m"
+#define RED "\e[0;31m"
+#define GRN "\e[0;32m"
+#define YEL "\e[0;33m"
+#define BLU "\e[0;34m"
+#define MAG "\e[0;35m"
+#define CYN "\e[0;36m"
+#define WHT "\e[0;37m"
+
+#define STENCIL_SIZE 6
+
+#define HALO_SIZE 3
 
 typedef float stencil_t;
 
@@ -52,10 +64,12 @@ static int world_size;
 static int tag;
 
 #define TOP_HALO values
-#define BOT_HALO values + size_x * (HALO_SIZE - 1)
+#define BOT_HALO (values + size_x * (HALO_SIZE + 1))
+#define FIRST_ROW (values + size_x)
+#define LAST_ROW (values + size_x * (HALO_SIZE))
 
-#define IS_FIRST rank == 0
-#define IS_LAST rank == (world_size - 1)
+#define IS_FIRST (rank == 0)
+#define IS_LAST (rank == (world_size - 1))
 
 
 /** init stencil values to 0, borders to non-zero */
@@ -65,29 +79,28 @@ static void stencil_init(void)
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 	MPI_Comm_size(MPI_COMM_WORLD, &world_size);
 
-	values = calloc(size_x * HALO_SIZE, sizeof(stencil_t));
-	prev_values = calloc(size_x * HALO_SIZE, sizeof(stencil_t));
+	values = calloc(size_x * (HALO_SIZE + 2), sizeof(stencil_t));
+	prev_values = calloc(size_x * (HALO_SIZE + 2), sizeof(stencil_t));
 
-	
 	if (IS_FIRST){
 		for (int x = 0; x < size_x; x++) {
-			values[x + size_x * 0] = x;
+			FIRST_ROW[x] = x;
 		}
 	}
 	if (IS_LAST) {
 		for (int x = 0; x < size_x; x++)
 		{
-			values[x + size_x * (HALO_SIZE - 1)] = size_x - x - 1;
+			FIRST_ROW[x + size_x * (HALO_SIZE - 1)] = size_x - x - 1;
 		}	
 	}
 	
 	
-	for (int y = 0; y < HALO_SIZE; y++)
+	for (int y = -1; y < HALO_SIZE + 1; y++)
 	{
-		values[0 + size_x * y] = y + HALO_SIZE * rank;
-		values[size_x - 1 + size_x * y] = size_y - (y + HALO_SIZE * rank) - 1;
+		FIRST_ROW[0 + size_x * y] = y + HALO_SIZE * rank;
+		FIRST_ROW[size_x - 1 + size_x * y] = size_y - (y + HALO_SIZE * rank) - 1;
 	}
-	memcpy(prev_values, values, size_x * size_y * sizeof(stencil_t));
+	memcpy(prev_values, values, size_x * (HALO_SIZE + 2) * sizeof(stencil_t));
 }
 
 static void stencil_free(void)
@@ -99,26 +112,35 @@ static void stencil_free(void)
 /** display a (part of) the stencil values */
 static void stencil_display(int x0, int x1, int y0, int y1)
 {
-	// Todo, for now, you don't display it
-	return; 
-	if (STENCIL_SIZE >= 20)
-		return;
+	if (rank % 2 == 0) printf(RED);
+	else printf(GRN);
 	int x, y;
 	for (y = y0; y <= y1; y++)
 	{
 		for (x = x0; x <= x1; x++)
 		{
-			printf("%4.5g ", values[x + size_x * y]);
+			printf("%4.5g ", FIRST_ROW[x + size_x * y]);
 		}
 		printf("\n");
 	}
+	printf(RESET);
 }
 
 static int stencil_internal(void)
 {
 	int convergence = 1;
 
-	for (int y = 1; y < HALO_SIZE - 1; y++)
+	int start = 1;
+	if (IS_FIRST) {
+		start = 2;
+	}
+	int end = HALO_SIZE + 1;
+	if (IS_LAST) {
+		end -= 1;
+	}
+	
+
+	for (int y = start; y < end; y++)
 	{
 		for (int x = 1; x < size_x - 1; x++)
 		{
@@ -141,7 +163,7 @@ static void handle_top_neighbor() {
 	if (IS_FIRST) return;
 	// Make it non lock, otherwise troubles :x
 	MPI_Status status;
-	MPI_Send(TOP_HALO, size_x, MPI_FLOAT, rank - 1, tag, MPI_COMM_WORLD);
+	MPI_Send(FIRST_ROW, size_x, MPI_FLOAT, rank - 1, tag, MPI_COMM_WORLD);
 	MPI_Recv(TOP_HALO, size_x, MPI_FLOAT, rank - 1, tag, MPI_COMM_WORLD, &status);
 }
 
@@ -149,7 +171,7 @@ static void handle_bot_neighbor() {
 	if (IS_LAST) return;
 	MPI_Status status;
 	MPI_Recv(BOT_HALO, size_x, MPI_FLOAT, rank + 1, tag, MPI_COMM_WORLD, &status);
-	MPI_Send(BOT_HALO, size_x, MPI_FLOAT, rank + 1, tag, MPI_COMM_WORLD);	
+	MPI_Send(LAST_ROW, size_x, MPI_FLOAT, rank + 1, tag, MPI_COMM_WORLD);	
 }
 
 
@@ -171,7 +193,7 @@ static void stencil_communicate(int* convergence)
 static int stencil_step(void)
 {
 	int convergence = 1;
-	/* switch buffers */
+
 	stencil_t *tmp = prev_values;
 	prev_values = values;
 	values = tmp;
@@ -180,11 +202,38 @@ static int stencil_step(void)
 	convergence = stencil_internal();
 	// Communicate adjacent rows
 	stencil_communicate(&convergence);
+	/* switch buffers */
+
+
 
 	// barrier
 	MPI_Barrier(MPI_COMM_WORLD);
 
 	return convergence;
+}
+
+void mpi_stencil_display() {
+	MPI_Barrier(MPI_COMM_WORLD);
+	if (IS_FIRST) {
+		stencil_display(0, size_x - 1, 0, HALO_SIZE - 1);
+		// printf(BLU);
+		// for (int x = 0; x <= size_x - 1; x++)
+		// {
+		// 	printf("%4.5g ", FIRST_ROW[x + size_x * HALO_SIZE]);
+		// }
+		// printf("\n");
+	}
+	sleep(0.1);
+	MPI_Barrier(MPI_COMM_WORLD);
+	if (IS_LAST){
+		// printf(BLU);
+		// for (int x = 0; x <= size_x - 1; x++)
+		// {
+		// 	printf("%4.5g ", values[x]);
+		// }
+		// printf("\n");
+		stencil_display(0, size_x - 1, 0, HALO_SIZE - 1);
+	}
 }
 
 int main(int argc, char **argv)
@@ -193,20 +242,25 @@ int main(int argc, char **argv)
 	stencil_init();
 	if (IS_FIRST) {
 		printf("# init:\n");
-		// stencil_display(0, size_x - 1, 0, size_y - 1);
 	}
-	
+	mpi_stencil_display();
 
 	struct timespec t1, t2;
 	clock_gettime(CLOCK_MONOTONIC, &t1);
 	int s;
 	for (s = 0; s < stencil_max_steps; s++)
 	{
+		
 		int convergence = stencil_step();
 		if (convergence)
 		{
 			break;
 		}
+		// mpi_stencil_display();
+		// if (IS_LAST)
+		// // printf("\n");
+		// sleep(1);
+		MPI_Barrier(MPI_COMM_WORLD);
 	}
 	clock_gettime(CLOCK_MONOTONIC, &t2);
 	const double t_usec = (t2.tv_sec - t1.tv_sec) * 1000000.0 + (t2.tv_nsec - t1.tv_nsec) / 1000.0;
@@ -214,8 +268,8 @@ int main(int argc, char **argv)
 		printf("# steps = %d\n", s);
 		printf("# time = %g usecs.\n", t_usec);
 		printf("# gflops = %g\n", (6.0 * size_x * size_y * s) / (t_usec * 1000));
-	// stencil_display(0, size_x - 1, 0, size_y - 1);	
 	}
+	mpi_stencil_display();
 	stencil_free();
 
 	MPI_Finalize();
