@@ -257,7 +257,7 @@ int main(int argc, char **argv)
 	if (IS_FIRST) {
 		printf("# steps = %d\n", s);
 		printf("# time = %g usecs.\n", t_usec);
-		printf("# gflops = %g\n", (6.0 * size_x * size_y * s) / (t_usec * 1000));
+		printf("# gflops = %g\n", (6.0 * size_x * HALO_SIZE * world_size * s) / (t_usec * 1000));
 	}
 	mpi_stencil_display();
 	stencil_free();
