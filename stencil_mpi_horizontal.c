@@ -38,9 +38,9 @@ More data to transfer compared to a square setup
 #define CYN "\e[0;36m"
 #define WHT "\e[0;37m"
 
-#define STENCIL_SIZE 500
+#define STENCIL_SIZE 10
 
-#define HALO_SIZE 100
+#define HALO_SIZE 3
 
 typedef float stencil_t;
 

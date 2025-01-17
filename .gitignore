@@ -1,2 +1,4 @@
 *.out
 stencil
+stencil_mpi_horizontal
+stencil_mpi+x

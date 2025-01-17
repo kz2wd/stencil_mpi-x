@@ -39,9 +39,9 @@ More data to transfer compared to a square setup
 #define CYN "\e[0;36m"
 #define WHT "\e[0;37m"
 
-#define STENCIL_SIZE 1000000
+#define STENCIL_SIZE 500
 
-#define HALO_SIZE 100
+#define HALO_SIZE 500
 
 typedef float stencil_t;
 
@@ -52,7 +52,7 @@ static const stencil_t alpha = 0.02;
 static const stencil_t epsilon = 0.0001;
 
 /** max number of steps */
-static const int stencil_max_steps = 100;
+static const int stencil_max_steps = 100000;
 
 static stencil_t *values = NULL;
 static stencil_t *prev_values = NULL;
@@ -140,8 +140,7 @@ static int stencil_internal(void)
 		end -= 1;
 	}
 	
-	#pragma omp parallel for shared(values, prev_values, convergence) default(none) \
-	firstprivate(size_x, start, end, alpha, epsilon) scehdule(static)
+	#pragma omp parallel for schedule(static)
 	for (int y = start; y < end; y++)
 	{
 		for (int x = 1; x < size_x - 1; x++)
@@ -153,7 +152,6 @@ static int stencil_internal(void)
 						 prev_values[x + size_x * (y + 1)]) +
 				(1.0 - 4.0 * alpha) * prev_values[x + size_x * y];
 			
-			#pragma omp critical
 			if (convergence && (fabs(prev_values[x + size_x * y] - values[x + size_x * y]) > epsilon))
 			{
 				convergence = 0;
@@ -218,7 +216,6 @@ static int stencil_step(void)
 
 	// barrier
 	MPI_Barrier(MPI_COMM_WORLD);
-	printf("STEP DONE\n");
 	return convergence;
 }
 
