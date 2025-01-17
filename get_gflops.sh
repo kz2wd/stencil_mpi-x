@@ -3,15 +3,15 @@
 # strong scaling = how much faster can we go as we add cores?
 # weak scaling = how fast can we keep going as we multiple the number of cores and the size of the problem by the same amount?
 
-program="./stencil"
+binary="stencil_mpi_horizontal"
 
-repeat=3
+repeat=1
 
-initial_stencil_size=4
-initial_halo_size=4
+initial_stencil_size=10
+initial_halo_size=10
 
 separator=','
-header="stencil_size${separator}halo_size${separator}gflops"
+header="np_mpi${separator}stencil_size${separator}halo_size${separator}gflops"
 second_minute_hour_day_month_year=$(date +"%S_%M_%H_%d_%m_%Y")
 result_dir="results"
 result_file="${result_dir}/gflops_${second_minute_hour_day_month_year}.csv"
@@ -21,7 +21,7 @@ result_file="${result_dir}/gflops_${second_minute_hour_day_month_year}.csv"
 #GETOPT begin
 ###############
 
-TEMP=$(getopt -o 'hr:p:s:H:' --long 'repeat:,program:,stencil_size:,halo_size:' -n 'get_gflops.sh' -- "$@")
+TEMP=$(getopt -o 'hr:b:s:H:' --long 'repeat:,binary:,stencil_size:,halo_size:' -n 'get_gflops.sh' -- "$@")
 
 if [ $? -ne 0 ]; then
 	echo 'Terminating...' >&2
@@ -45,9 +45,9 @@ OPTIONS
         Print this message and exit
 
   -r, --repeat [n]
-		Number of runs for the same program and the same args, so that a mean can be computed. Default is ${repeat}.
-  -p, --program [prog_name]
-		Name of the program to run (the program computes and prints the gflops of its own run). Default is ${program}.
+		Number of runs for the same binary and the same args, so that a mean can be computed. Default is ${repeat}.
+  -b, --binary [prog_name]
+		Name of the binary to run (the binary computes and prints the gflops of its own run). Default is ${binary}.
   -s, --stencil_size [n]
 		The initial stencil size, potentially increasing along the calls made by this script. Default is ${initial_stencil_size}.
   -h, --halo_size [n]
@@ -65,8 +65,8 @@ while true; do
 		repeat=$2
 		continue
 		;;
-	'-p' | '--program')
-		program=$2
+	'-b' | '--binary')
+		binary=$2
 		continue
 		;;
 	'-s' | '--stencil_size')
@@ -104,17 +104,21 @@ make_run_benchmark() {
 	local stencil_size=$1
 	local halo_size=$2
 
-	local gflops_sum=0
-	local cur_gflops=0
-
 	make clean
-	make "CFLAGS += -Wall -g -O4 -DSTENCIL_SIZE=${stencil_size} -DHALO_SIZE=${halo_size}"
-	for rep in $(seq 1 ${repeat}); do
-		cur_gflops=$(./${program} | grep gflops | cut -d "=" -f 2)
-		gflops_sum=$(echo "${gflops_sum} + ${cur_gflops}" | bc)
+	make "CFLAGS += -Wall -O4 -DSTENCIL_SIZE=${stencil_size} -DHALO_SIZE=${halo_size}"
+	for np_mpi in {1,2,4}; do
+		local gflops_sum=0
+		local cur_gflops=0
+		for rep in $(seq 1 ${repeat}); do
+			#cur_gflops=$(sbatch './sbatch.slm' ${binary} | grep gflops | cut -d "=" -f 2)
+			cur_gflops=$(mpirun -np ${np_mpi} -bind-to core --map-by ppr:1:core ./${binary} | grep gflops | cut -d "=" -f 2)
+			gflops_sum=$(echo "${gflops_sum} + ${cur_gflops}" | bc)
+		done
+		local gflops=$(echo "scale=4; ${gflops_sum}/${repeat}" | bc)
+		echo "${np_mpi}${separator}${stencil_size}${separator}${halo_size}${separator}${gflops}" >>${result_file}
+
 	done
-	local gflops=$(echo "scale=4; ${gflops_sum}/${repeat}" | bc)
-	echo "${stencil_size}${separator}${halo_size}${separator}${gflops}" >>${result_file}
+
 }
 
 benchmark_stencil_size() {
@@ -127,13 +131,13 @@ benchmark_stencil_size() {
 
 benchmark_stencil_and_halo_size() {
 	local halo_size=${initial_halo_size}
-	for i in {1..5}; do
+	for i in {1..3}; do
 		local stencil_size=${initial_stencil_size}
-		for j in {1..5}; do
+		for j in {1..3}; do
 			make_run_benchmark ${stencil_size} ${halo_size}
-			stencil_size=$((${stencil_size} * 2))
+			stencil_size=$((${stencil_size} * 10))
 		done
-		halo_size=$((${halo_size} * 2))
+		halo_size=$((${halo_size} * 10))
 	done
 }
 

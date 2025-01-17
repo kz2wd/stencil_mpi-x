@@ -13,11 +13,5 @@
 module load compiler/gcc/9.3.0
 module load mpi/openmpi/3.1.4-all
 
-# cd in the project folder
-# cd $HOME/programming/slurm
-
-# compile
-# mpicc -O3 ring.c -lm -o program_ring
-
 # run
-mpirun -np $NP ./program_ring $NXTOT
+mpirun -np $NP $binary #TODO
